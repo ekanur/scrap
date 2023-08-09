@@ -4,7 +4,7 @@ from bs4 import BeautifulSoup
 username = "yulandikasp@gmail.com" 
 password = "123456" 
 login_url = "https://sipmen.bps.go.id/st2023/login" 
-scrap_page = "https://sipmen.bps.go.id/st2023/sipmen-terima-kab-pengolahan/tambah-generate-box-kab" 
+scrap_page = "https://sipmen.bps.go.id/st2023/sipmen-terima-kab-pengolahan/index-generate-box-kab" 
 post_endpoint = "https://sipmen.bps.go.id/st2023/sipmen-terima-kab-pengolahan/insert_surat" 
 
 def read_data():
@@ -17,7 +17,13 @@ def read_data():
     
     return data
 
-def read_csrf():
+def send_data():
+    data = read_data()
+    csrf=""
+    failed_count = 0
+    i=0
+    data_size = len(data)
+
     with requests.session() as s: 
         req = s.get(login_url).text 
         html = BeautifulSoup(req,"html.parser") 
@@ -28,17 +34,33 @@ def read_csrf():
             "username": username, 
             "password": password
         } 
-        res =s.post(login_url, data=payload) 
-    
-        r = s.get(scrap_page) 
+        res = s.post(login_url, data=payload)
+
+        r = s.get(scrap_page)
         soup = BeautifulSoup (r.content, "html.parser") 
+        csrf = soup.find('meta', {"name": "csrf-token"}).attrs['content'] 
+        print("Mengirim " + str(data_size)+ " data....")
+        print("")
+        for row in data:
+            i+=1
+            # print(row['kode'])
+            print("{0} Uploading : {1:s}--{2:s}".format(i, row['kode'], row['petugas']))
+            send_data = s.post(post_endpoint, data = {'no_box_besar':row['kode'], 'petugas':row['petugas']}, headers={'X-Requested-With': 'XMLHttpRequest', 'X-Csrf-Token':csrf})
 
-    
-    return soup.find('meta', {"name": "csrf-token"}).attrs['content']
+            if("berhasil" in str(send_data.content)):
+                print("Status : Sukses")
+            else:
+                print("Status : Gagal")
+                failed_count+=1
+            
+            print("================================================")
+            
+        print("Data dikirim : "+str(data_size))
+        print("Sukses : "+str(data_size-failed_count))
+        print("Gagal : "+str(failed_count))
 
-# print(table)
-print(read_csrf())
-print(read_data())
+   
+send_data()
 
 
 
