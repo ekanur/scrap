@@ -1,11 +1,20 @@
-import requests, csv 
-from bs4 import BeautifulSoup 
- 
-username = "yulandikasp@gmail.com" 
-password = "123456" 
-login_url = "https://sipmen.bps.go.id/st2023/login" 
-scrap_page = "https://sipmen.bps.go.id/st2023/sipmen-terima-kab-pengolahan/index-generate-box-kab" 
-post_endpoint = "https://sipmen.bps.go.id/st2023/sipmen-terima-kab-pengolahan/insert_surat" 
+import requests, csv, time
+import concurrent.futures
+import threading
+from bs4 import BeautifulSoup
+
+thread_local = threading.local()
+
+username        = "yulandikasp@gmail.com" 
+password        = "123456" 
+login_url       = "https://sipmen.bps.go.id/st2023/login" 
+scrap_page      = "https://sipmen.bps.go.id/st2023/sipmen-terima-kab-pengolahan/index-generate-box-kab" 
+post_endpoint   = "https://sipmen.bps.go.id/st2023/sipmen-terima-kab-pengolahan/insert_surat" 
+
+def get_session():
+    if not hasattr(thread_local, 'session'):
+        thread_local.session = requests.Session()
+    return thread_local.session
 
 def read_data():
     data = []
@@ -19,12 +28,11 @@ def read_data():
 
 def send_data():
     data = read_data()
-    csrf=""
     failed_count = 0
-    i=0
     data_size = len(data)
+    session = get_session()
 
-    with requests.session() as s: 
+    with session as s: 
         req = s.get(login_url).text 
         html = BeautifulSoup(req,"html.parser") 
         _csrf = html.find("input", {"name": "_csrf"}).attrs["value"] 
@@ -34,33 +42,44 @@ def send_data():
             "username": username, 
             "password": password
         } 
-        res = s.post(login_url, data=payload)
+        
+        s.post(login_url, data=payload)
 
         r = s.get(scrap_page)
         soup = BeautifulSoup (r.content, "html.parser") 
-        csrf = soup.find('meta', {"name": "csrf-token"}).attrs['content'] 
-        print("Mengirim " + str(data_size)+ " data....")
+        thread_local.csrf = soup.find('meta', {"name": "csrf-token"}).attrs['content']
+
+        print("Mengirim " + str(data_size) + " data....")
         print("")
-        for row in data:
-            i+=1
-            # print(row['kode'])
-            print("{0} Uploading : {1:s}--{2:s}".format(i, row['kode'], row['petugas']))
-            send_data = s.post(post_endpoint, data = {'no_box_besar':row['kode'], 'petugas':row['petugas']}, headers={'X-Requested-With': 'XMLHttpRequest', 'X-Csrf-Token':csrf})
+        with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
+            executor.map(send, data)
 
-            if("berhasil" in str(send_data.content)):
-                print("Status : Sukses")
-            else:
-                print("Status : Gagal")
-                failed_count+=1
+        # for row in data:
+        #     i+=1
+        #     print(row['kode'])
             
-            print("================================================")
-            
-        print("Data dikirim : "+str(data_size))
-        print("Sukses : "+str(data_size-failed_count))
-        print("Gagal : "+str(failed_count))
+        #     send_data = s.post(post_endpoint, data = {'no_box_besar':row['kode'], 'petugas':row['petugas']}, headers={'X-Requested-With': 'XMLHttpRequest', 'X-Csrf-Token':csrf})
 
-   
+        #     if("berhasil" in str(send_data.content)):
+        #         print("Status : Sukses")
+        #     else:
+        #         print("Status : Gagal")
+        #         failed_count+=1
+            
+        #     print("================================================")
+            
+        # print("Data dikirim : "+str(data_size))
+        # print("Sukses : "+str(data_size-failed_count))
+        # print("Gagal : "+str(failed_count))
+
+def send(row):
+    session = get_session()
+    with session.post(post_endpoint, data = {'no_box_besar':row['kode'], 'petugas':row['petugas']}, headers={'X-Requested-With': 'XMLHttpRequest', 'X-Csrf-Token':thread_local.csrf}) as resp:
+        print(" Uploading : {1:s}--{2:s}".format(row['kode'], row['petugas']))
+    
+        return resp.content
+
+start_time = time.time()
 send_data()
-
-
-
+duration = time.time() - start_time
+print(f"Proses berjalan : {duration} detik")
